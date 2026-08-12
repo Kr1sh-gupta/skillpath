@@ -1,115 +1,30 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Course, FetchStatus, ViewMode, ApiMode, CurrencyOverride, SortOption } from '../../lib/types';
+import React, { useState, useMemo } from 'react';
+import { ViewMode, ApiMode, CurrencyOverride, SortOption } from '../../lib/types';
+import { useCourseData } from '../../hooks/useCourseData';
 import { CourseCard } from './CourseCard';
 import { CourseSkeleton } from './CourseSkeleton';
 import { CourseError } from './CourseError';
 import { CourseEmpty } from './CourseEmpty';
 import { PropertyBar } from './PropertyBar';
-import { Search, ArrowUpDown, Filter, Sparkles, AlertCircle, RefreshCw, DollarSign, IndianRupee } from 'lucide-react';
-
-const BASE_URL = 'https://syncsphere-hiv6.onrender.com';
+import { Search, ArrowUpDown, Sparkles, DollarSign, IndianRupee } from 'lucide-react';
 
 export const CourseExplorer: React.FC = () => {
-  // Data States
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [countryCode, setCountryCode] = useState<string | null>(null);
-  
-  // Status & Error States
-  const [status, setStatus] = useState<FetchStatus>('idle');
-  const [courseError, setCourseError] = useState<string | null>(null);
-  const [countryError, setCountryError] = useState<string | null>(null);
-
-  // Designer Property Control States
+  // Designer Property Controls
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [apiMode, setApiMode] = useState<ApiMode>('auto');
   const [currencyOverride, setCurrencyOverride] = useState<CurrencyOverride>('auto');
 
-  // Filter & Search States
+  // Filter & Search Controls
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [sortBy, setSortBy] = useState<SortOption>('default');
 
-  // Primary Data Fetcher
-  const fetchData = useCallback(async () => {
-    setStatus('loading');
-    setCourseError(null);
-    setCountryError(null);
+  // Modular custom hook handling data fetching & fault tolerance
+  const { courses, countryCode, status, courseError, countryError, refetch } = useCourseData(apiMode);
 
-    // If evaluator forced error test mode
-    if (apiMode === 'force_error') {
-      setTimeout(() => {
-        setCourseError('500 Internal Server Error (Forced Test Mode)');
-        setCountryError('500 Service Unavailable');
-        setStatus('error');
-      }, 600);
-      return;
-    }
-
-    try {
-      // Execute both GET calls concurrently
-      const [coursesRes, countryRes] = await Promise.allSettled([
-        fetch(`${BASE_URL}/assignment/course-data`, { method: 'GET', cache: 'no-store' }),
-        fetch(`${BASE_URL}/assignment/country-code`, { method: 'GET', cache: 'no-store' }),
-      ]);
-
-      let courseFetchFailed = false;
-      let fetchedCourses: Course[] = [];
-      let fetchedCountry: string | null = null;
-
-      // Handle Course Data response
-      if (coursesRes.status === 'fulfilled' && coursesRes.value.ok) {
-        try {
-          fetchedCourses = await coursesRes.value.json();
-          if (!Array.isArray(fetchedCourses)) {
-            throw new Error('Invalid array response format');
-          }
-        } catch {
-          courseFetchFailed = true;
-          setCourseError('Malformed JSON payload');
-        }
-      } else {
-        courseFetchFailed = true;
-        const errStatus = coursesRes.status === 'fulfilled' ? coursesRes.value.status : 500;
-        setCourseError(`HTTP ${errStatus} API Failure`);
-      }
-
-      // Handle Country Code response
-      if (countryRes.status === 'fulfilled' && countryRes.value.ok) {
-        try {
-          const countryJson = await countryRes.value.json();
-          fetchedCountry = countryJson?.country_code || 'IN';
-        } catch {
-          setCountryError('Country format error');
-          fetchedCountry = 'IN'; // Graceful fallback
-        }
-      } else {
-        const errStatus = countryRes.status === 'fulfilled' ? countryRes.value.status : 500;
-        setCountryError(`Country Endpoint HTTP ${errStatus}`);
-        fetchedCountry = 'IN'; // Graceful fallback rule
-      }
-
-      setCountryCode(fetchedCountry);
-
-      if (courseFetchFailed) {
-        setStatus('error');
-      } else {
-        setCourses(fetchedCourses);
-        setStatus('success');
-      }
-
-    } catch (err: any) {
-      setCourseError(err?.message || 'Network error');
-      setStatus('error');
-    }
-  }, [apiMode]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  // Derived list of unique main categories
+  // Derived list of categories
   const categories = useMemo(() => {
     const set = new Set<string>();
     courses.forEach((c) => {
@@ -122,7 +37,7 @@ export const CourseExplorer: React.FC = () => {
   const filteredCourses = useMemo(() => {
     let result = [...courses];
 
-    // Search query filter
+    // Search filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(
@@ -134,7 +49,7 @@ export const CourseExplorer: React.FC = () => {
       );
     }
 
-    // Category pill filter
+    // Category filter
     if (selectedCategory !== 'All') {
       if (selectedCategory === 'Refundable') {
         result = result.filter((c) => c.refundable);
@@ -143,7 +58,7 @@ export const CourseExplorer: React.FC = () => {
       }
     }
 
-    // Sort logic
+    // Sorting
     if (sortBy === 'price-low') {
       result.sort((a, b) => (countryCode === 'US' ? a.priceUsdCents - b.priceUsdCents : a.pricePaise - b.pricePaise));
     } else if (sortBy === 'price-high') {
@@ -200,11 +115,11 @@ export const CourseExplorer: React.FC = () => {
         activeCountry={countryCode}
         totalCourses={courses.length}
         countryError={!!countryError}
-        onManualRefresh={fetchData}
+        onManualRefresh={refetch}
         isFetching={status === 'loading'}
       />
 
-      {/* Search Bar & Filter Controls Toolbar */}
+      {/* Search Bar & Filter Toolbar */}
       <div className="glass-card rounded-2xl p-4 border border-white/10 mb-8 flex flex-col md:flex-row items-center justify-between gap-4">
         
         {/* Search Input */}
@@ -275,7 +190,7 @@ export const CourseExplorer: React.FC = () => {
           <CourseError
             courseError={courseError}
             countryError={countryError}
-            onRetry={fetchData}
+            onRetry={refetch}
             isRetrying={false}
           />
         )}

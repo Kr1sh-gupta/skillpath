@@ -1,0 +1,31 @@
+name: Issue Triage & Welcome Bot
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Welcome Issue Reporter & Auto Label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            
+            // Add automated welcome comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: `👋 Thanks @${issue.user.login} for opening this issue! Our team will review your report shortly. Please ensure you have provided step-by-step reproduction steps.`
+            });
+
+            // Apply triage label
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              labels: ['triage-needed', 'assignment-feedback']
+            });
